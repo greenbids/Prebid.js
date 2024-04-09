@@ -1,4 +1,4 @@
-import { logError, deepClone, generateUUID, deepSetValue, deepAccess } from '../src/utils.js';
+import { logError, logInfo, deepClone, generateUUID, deepSetValue, deepAccess, getParameterByName } from '../src/utils.js';
 import { ajax } from '../src/ajax.js';
 import { submodule } from '../src/hook.js';
 import * as events from '../src/events.js';
@@ -6,7 +6,8 @@ import CONSTANTS from '../src/constants.json';
 
 const MODULE_NAME = 'greenbidsRtdProvider';
 const MODULE_VERSION = '2.0.0';
-const ENDPOINT = 'https://t.greenbids.ai';
+// const ENDPOINT = 'https://t.greenbids.ai';
+const ENDPOINT = 'http://localhost:9998';
 
 const rtdOptions = {};
 
@@ -86,6 +87,7 @@ function updateAdUnitsBasedOnResponse(adUnits, responseAdUnits, greenbidsId) {
         keptInAuction: matchingAdUnit.bidders,
         isExploration: matchingAdUnit.isExploration
       });
+
       if (!matchingAdUnit.isExploration) {
         removeFalseBidders(adUnit, matchingAdUnit);
       }
@@ -98,8 +100,14 @@ function findMatchingAdUnit(responseAdUnits, adUnitCode) {
 }
 
 function removeFalseBidders(adUnit, matchingAdUnit) {
-  const falseBidders = getFalseBidders(matchingAdUnit.bidders);
-  adUnit.bids = adUnit.bids.filter((bidRequest) => !falseBidders.includes(bidRequest.bidder));
+  const isFilteringForced = getParameterByName('greenbids_force_filtering');
+  if (isFilteringForced) {
+    logInfo('Greenbids Rtd: filtering flag detected, forcing filtering of Rtd module.');
+    adUnit.bids = [];
+  } else {
+    const falseBidders = getFalseBidders(matchingAdUnit.bidders);
+    adUnit.bids = adUnit.bids.filter((bidRequest) => !falseBidders.includes(bidRequest.bidder));
+  }
 }
 
 function getFalseBidders(bidders) {
