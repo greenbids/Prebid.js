@@ -6,8 +6,8 @@ import CONSTANTS from '../src/constants.json';
 
 const MODULE_NAME = 'greenbidsRtdProvider';
 const MODULE_VERSION = '2.0.0';
-// const ENDPOINT = 'https://t.greenbids.ai';
-const ENDPOINT = 'http://localhost:9998';
+const ENDPOINT = 'https://t.greenbids.ai';
+// const ENDPOINT = 'http://localhost:9998';
 
 const rtdOptions = {};
 
