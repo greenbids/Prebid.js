@@ -1,15 +1,35 @@
-import {ajax} from '../src/ajax.js';
+import { ajax } from '../src/ajax.js';
 import adapter from '../libraries/analyticsAdapter/AnalyticsAdapter.js';
 import { EVENTS } from '../src/constants.js';
 import adapterManager from '../src/adapterManager.js';
-import {deepClone, generateUUID, logError, logInfo, logWarn, getParameterByName} from '../src/utils.js';
+import { deepClone, generateUUID, logError, logInfo, logWarn, getParameterByName } from '../src/utils.js';
 
 /**
  * @typedef {import('../src/adapters/bidderFactory.js').Bid} Bid
+ * @typedef {import('../src/adapters/bidderFactory.js').BidRequest} BidRequest
  */
 
 /**
  * @typedef {object} Message Payload message sent to the Greenbids API
+ */
+
+/**
+ * @typedef AuctionEndArgs
+ * @type {object}
+ * @property {string} auctionId
+ * @property {number} timestamp - Auction start epoch
+ * @property {number} auctionEnd - Auction end epoch
+ * @property {Bid[]} bidsReceived
+ * @property {BidRequest[]} noBids
+ */
+
+/**
+ * @typedef GreenbidsCachedOption
+ * @type {object}
+ * @property {any[]} timeoutBids
+ * @property {?string} greenbidsId
+ * @property {?string} billingId
+ * @property {boolean} isSampled
  */
 
 const analyticsType = 'endpoint';
@@ -33,7 +53,7 @@ export const BIDDER_STATUS = {
 
 const analyticsOptions = {};
 
-export const isSampled = function(greenbidsId, samplingRate, exploratorySamplingSplit) {
+export const isSampled = function (greenbidsId, samplingRate, exploratorySamplingSplit) {
   const isSamplingForced = getParameterByName('greenbids_force_sampling');
   if (isSamplingForced) {
     logInfo('Greenbids Analytics: sampling flag detected, forcing analytics');
@@ -52,7 +72,7 @@ export const isSampled = function(greenbidsId, samplingRate, exploratorySampling
   return isExtraSampled;
 }
 
-export const greenbidsAnalyticsAdapter = Object.assign(adapter({ANALYTICS_SERVER, analyticsType}), {
+export const greenbidsAnalyticsAdapter = Object.assign(adapter({ ANALYTICS_SERVER, analyticsType }), {
 
   cachedAuctions: {},
   exploratorySamplingSplit: 0.9,
@@ -125,83 +145,79 @@ export const greenbidsAnalyticsAdapter = Object.assign(adapter({ANALYTICS_SERVER
     };
   },
   /**
-   * @param {Bid} bid
-   * @param {BIDDER_STATUS} status
+   * @param {AuctionEndArgs} auctionEndArgs
+   * @param {GreenbidsCachedOption} cachedAuction
+   * @returns {Message}
    */
-  serializeBidResponse(bid, status) {
-    return {
-      bidder: bid.bidder,
-      isTimeout: (status === BIDDER_STATUS.TIMEOUT),
-      hasBid: (status === BIDDER_STATUS.BID),
-      params: (bid.params && Object.keys(bid.params).length > 0) ? bid.params : {},
-      ...(status === BIDDER_STATUS.BID ? {
-        cpm: bid.cpm,
-        currency: bid.currency
-      } : {}),
-    };
-  },
-  /**
-   * @param {*} message Greenbids API payload
-   * @param {Bid} bid Bid to add to the payload
-   * @param {BIDDER_STATUS} status Bidding status
-   */
-  addBidResponseToMessage(message, bid, status) {
-    const adUnitCode = bid.adUnitCode.toLowerCase();
-    const adUnitIndex = message.adUnits.findIndex((adUnit) => {
-      return adUnit.code === adUnitCode;
-    });
-    if (adUnitIndex === -1) {
-      logError('Trying to add to non registered adunit');
-      return;
-    }
-    const bidderIndex = message.adUnits[adUnitIndex].bidders.findIndex((bidder) => {
-      return bidder.bidder === bid.bidder;
-    });
-    if (bidderIndex === -1) {
-      message.adUnits[adUnitIndex].bidders.push(this.serializeBidResponse(bid, status));
-    } else {
-      message.adUnits[adUnitIndex].bidders[bidderIndex].params = (bid.params && Object.keys(bid.params).length > 0) ? bid.params : {};
-      if (status === BIDDER_STATUS.BID) {
-        message.adUnits[adUnitIndex].bidders[bidderIndex].hasBid = true;
-        message.adUnits[adUnitIndex].bidders[bidderIndex].cpm = bid.cpm;
-        message.adUnits[adUnitIndex].bidders[bidderIndex].currency = bid.currency;
-      } else if (status === BIDDER_STATUS.TIMEOUT) {
-        message.adUnits[adUnitIndex].bidders[bidderIndex].isTimeout = true;
-      }
-    }
-  },
-  createBidMessage(auctionEndArgs) {
-    const {auctionId, timestamp, auctionEnd, adUnits, bidsReceived, noBids} = auctionEndArgs;
-    const cachedAuction = this.getCachedAuction(auctionId);
-    const message = this.createCommonMessage(auctionId);
-    const timeoutBids = cachedAuction.timeoutBids || [];
+  createBidMessage(auctionEndArgs, cachedAuction) {
+    const {
+      auctionId,
+      timestamp,
+      auctionEnd,
+      adUnits,
+      bidsReceived,
+      noBids
+    } = auctionEndArgs;
+    const timeoutBids = (cachedAuction || this.getCachedAuction(auctionId)).timeoutBids || [];
 
+    const message = this.createCommonMessage(auctionId);
     message.auctionElapsed = (auctionEnd - timestamp);
+
+    const biddersSubMessages = new Map()
 
     adUnits.forEach((adUnit) => {
       const adUnitCode = adUnit.code?.toLowerCase() || 'unknown_adunit_code';
       message.adUnits.push({
         code: adUnitCode,
         mediaTypes: {
-          ...(adUnit.mediaTypes?.banner !== undefined) && {banner: adUnit.mediaTypes.banner},
-          ...(adUnit.mediaTypes?.video !== undefined) && {video: adUnit.mediaTypes.video},
-          ...(adUnit.mediaTypes?.native !== undefined) && {native: adUnit.mediaTypes.native}
+          ...(adUnit.mediaTypes?.banner !== undefined) && { banner: adUnit.mediaTypes.banner },
+          ...(adUnit.mediaTypes?.video !== undefined) && { video: adUnit.mediaTypes.video },
+          ...(adUnit.mediaTypes?.native !== undefined) && { native: adUnit.mediaTypes.native }
         },
         ortb2Imp: adUnit.ortb2Imp || {},
-        bidders: [],
+
+        bidders: adUnit.bids.map((bid) => {
+          const subMessage = {
+            bidder: bid.bidder,
+            params: (bid.params && Object.keys(bid.params).length > 0) ? bid.params : {},
+          }
+          biddersSubMessages.set((adUnitCode, bid.bidder), subMessage)
+          return subMessage
+        })
       });
     });
 
     // We enrich noBid then bids, then timeouts, because in case of a timeout, one response from a bidder
     // Can be in the 3 arrays, and we want that case reflected in the call
-    noBids.forEach(bid => this.addBidResponseToMessage(message, bid, BIDDER_STATUS.NO_BID));
-
-    bidsReceived.forEach(bid => this.addBidResponseToMessage(message, bid, BIDDER_STATUS.BID));
-
-    timeoutBids.forEach(bid => this.addBidResponseToMessage(message, bid, BIDDER_STATUS.TIMEOUT));
+    noBids.forEach(rqst => {
+      Object.assign(
+        biddersSubMessages.get((rqst.adUnitCode, rqst.bidder)),
+        { hasBid: false }
+      )
+    })
+    bidsReceived.forEach(bid => {
+      Object.assign(
+        biddersSubMessages.get((bid.adUnitCode, bid.bidder)),
+        {
+          hasBid: true,
+          cpm: bid.cpm,
+          currency: bid.currency
+        }
+      )
+    })
+    timeoutBids.forEach(badBid => {
+      Object.assign(
+        biddersSubMessages.get((badBid.adUnitCode, badBid.bidder)),
+        { isTimeout: true }
+      )
+    });
 
     return message;
   },
+  /**
+   * @param {string} auctionId
+   * @returns {GreenbidsCachedOption}
+   */
   getCachedAuction(auctionId) {
     this.cachedAuctions[auctionId] = this.cachedAuctions[auctionId] || {
       timeoutBids: [],
@@ -221,6 +237,9 @@ export const greenbidsAnalyticsAdapter = Object.assign(adapter({ANALYTICS_SERVER
     }
     cachedAuction.isSampled = isSampled(cachedAuction.greenbidsId, analyticsOptions.options.greenbidsSampling, this.exploratorySamplingSplit);
   },
+  /**
+   * @param {AuctionEndArgs} auctionEndArgs
+   */
   handleAuctionEnd(auctionEndArgs) {
     const cachedAuction = this.getCachedAuction(auctionEndArgs.auctionId);
     const isFilteringForced = getParameterByName('greenbids_force_filtering');
@@ -243,7 +262,7 @@ export const greenbidsAnalyticsAdapter = Object.assign(adapter({ANALYTICS_SERVER
       cachedAuction.billingId = billableArgs.billingId || 'unknown_billing_id';
     }
   },
-  track({eventType, args}) {
+  track({ eventType, args }) {
     try {
       if (eventType === AUCTION_INIT) {
         this.handleAuctionInit(args);
@@ -273,7 +292,7 @@ export const greenbidsAnalyticsAdapter = Object.assign(adapter({ANALYTICS_SERVER
 
 greenbidsAnalyticsAdapter.originEnableAnalytics = greenbidsAnalyticsAdapter.enableAnalytics;
 
-greenbidsAnalyticsAdapter.enableAnalytics = function(config) {
+greenbidsAnalyticsAdapter.enableAnalytics = function (config) {
   this.initConfig(config);
   if (typeof config.options.sampling === 'number') {
     // Set sampling to 1 to prevent prebid analytics integrated sampling to happen
