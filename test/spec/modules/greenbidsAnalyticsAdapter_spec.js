@@ -107,7 +107,6 @@ describe('Greenbids Prebid AnalyticsAdapter Testing', function () {
           cpm: 0.08,
           currency: 'USD',
           ad: '<html>fake ad2</html>',
-          params: {'placement ID': 12784}
         },
         {
           auctionId: auctionId,
@@ -158,64 +157,6 @@ describe('Greenbids Prebid AnalyticsAdapter Testing', function () {
         });
       });
 
-      describe('#serializeBidResponse', function () {
-        it('should handle BID properly with timeout false and hasBid true', function () {
-          const result = greenbidsAnalyticsAdapter.serializeBidResponse(receivedBids[0], BIDDER_STATUS.BID);
-
-          expect(result).to.include({
-            bidder: 'greenbids',
-            isTimeout: false,
-            hasBid: true,
-          });
-        });
-
-        it('should handle NO_BID properly and set hasBid to false', function () {
-          const result = greenbidsAnalyticsAdapter.serializeBidResponse(noBids[0], BIDDER_STATUS.NO_BID);
-
-          expect(result).to.include({
-            bidder: 'greenbids',
-            isTimeout: false,
-            hasBid: false,
-          });
-        });
-
-        it('should handle TIMEOUT properly and set isTimeout to true', function () {
-          const result = greenbidsAnalyticsAdapter.serializeBidResponse(noBids[0], BIDDER_STATUS.TIMEOUT);
-
-          expect(result).to.include({
-            bidder: 'greenbids',
-            isTimeout: true,
-            hasBid: false,
-          });
-        });
-      });
-
-      describe('#addBidResponseToMessage()', function () {
-        it('should add a bid response in the output message, grouped by adunit_id and bidder', function () {
-          const message = {
-            adUnits: [
-              {
-                code: 'adunit-2',
-                bidders: []
-              }
-            ]
-          };
-          greenbidsAnalyticsAdapter.addBidResponseToMessage(message, noBids[0], BIDDER_STATUS.NO_BID);
-
-          expect(message.adUnits[0]).to.deep.include({
-            code: 'adunit-2',
-            bidders: [
-              {
-                bidder: 'greenbids',
-                isTimeout: false,
-                hasBid: false,
-                params: {}
-              }
-            ]
-          });
-        });
-      });
-
       describe('#createBidMessage()', function () {
         it('should format auction message sent to the backend', function () {
           const args = {
@@ -231,7 +172,10 @@ describe('Greenbids Prebid AnalyticsAdapter Testing', function () {
                   banner: {
                     sizes: [[300, 250], [300, 600]]
                   },
-                }
+                },
+                bids: [
+                  { bidder: "greenbidsx", params: { 'placement ID': 12784 } }
+                ]
               },
               {
                 code: 'adunit-2',
@@ -260,9 +204,7 @@ describe('Greenbids Prebid AnalyticsAdapter Testing', function () {
             noBids: noBids
           };
 
-          sinon.stub(greenbidsAnalyticsAdapter, 'getCachedAuction').returns({ timeoutBids: timeoutBids });
-          const result = greenbidsAnalyticsAdapter.createBidMessage(args, timeoutBids);
-          greenbidsAnalyticsAdapter.getCachedAuction.restore();
+          const result = greenbidsAnalyticsAdapter.createBidMessage(args, { timeoutBids: timeoutBids });
           assertHavingRequiredMessageFields(result);
           expect(result).to.deep.include({
             auctionElapsed: 100,

@@ -34,7 +34,7 @@ import { deepClone, generateUUID, logError, logInfo, logWarn, getParameterByName
 
 const analyticsType = 'endpoint';
 
-export const ANALYTICS_VERSION = '2.3.2';
+export const ANALYTICS_VERSION = '2.3.3';
 
 const ANALYTICS_SERVER = 'https://a.greenbids.ai';
 
@@ -176,7 +176,7 @@ export const greenbidsAnalyticsAdapter = Object.assign(adapter({ ANALYTICS_SERVE
         },
         ortb2Imp: adUnit.ortb2Imp || {},
 
-        bidders: adUnit.bids.map((bid) => {
+        bidders: (adUnit.bids || []).map((bid) => {
           const subMessage = {
             bidder: bid.bidder,
             params: (bid.params && Object.keys(bid.params).length > 0) ? bid.params : {},
@@ -189,15 +189,17 @@ export const greenbidsAnalyticsAdapter = Object.assign(adapter({ ANALYTICS_SERVE
 
     // We enrich noBid then bids, then timeouts, because in case of a timeout, one response from a bidder
     // Can be in the 3 arrays, and we want that case reflected in the call
+    logInfo(noBids)
     noBids.forEach(rqst => {
       Object.assign(
-        biddersSubMessages.get((rqst.adUnitCode, rqst.bidder)),
+        biddersSubMessages.get((rqst.adUnitCode, rqst.bidder)) || {},
         { hasBid: false }
       )
     })
+    logInfo(bidsReceived)
     bidsReceived.forEach(bid => {
       Object.assign(
-        biddersSubMessages.get((bid.adUnitCode, bid.bidder)),
+        biddersSubMessages.get((bid.adUnitCode, bid.bidder)) || {},
         {
           hasBid: true,
           cpm: bid.cpm,
@@ -205,9 +207,10 @@ export const greenbidsAnalyticsAdapter = Object.assign(adapter({ ANALYTICS_SERVE
         }
       )
     })
+    logInfo(timeoutBids)
     timeoutBids.forEach(badBid => {
       Object.assign(
-        biddersSubMessages.get((badBid.adUnitCode, badBid.bidder)),
+        biddersSubMessages.get((badBid.adUnitCode, badBid.bidder)) || {},
         { isTimeout: true }
       )
     });
