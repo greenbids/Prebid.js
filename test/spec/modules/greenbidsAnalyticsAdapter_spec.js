@@ -158,6 +158,27 @@ describe('Greenbids Prebid AnalyticsAdapter Testing', function () {
       });
 
       describe('#createBidMessage()', function () {
+        it('should support multiple adunits with same code', function() {
+          const args = {
+            auctionId: auctionId
+            timestamp: 0,
+            auctionEnd: 100,
+            adUnitCodes: ['adunit-1', 'adunit-1'],
+            adUnits: [
+              {
+                code: 'adunit-1',
+                mediaTypes: {banner: {sizes: [[300, 250]]}},
+                bids: [{ bidder: "bidder-1" }]
+              },
+              {
+                code: 'adunit-1',
+                mediaTypes: { video: {}},
+                bids: [{ bidder: "bidder-2" }]
+              },
+            ],
+          }
+          // TODO
+        });
         it('should format auction message sent to the backend', function () {
           const args = {
             auctionId: auctionId,
