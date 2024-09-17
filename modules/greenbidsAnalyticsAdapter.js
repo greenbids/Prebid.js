@@ -158,12 +158,53 @@ export const greenbidsAnalyticsAdapter = Object.assign(adapter({ ANALYTICS_SERVE
       bidsReceived,
       noBids
     } = auctionEndArgs;
-    const timeoutBids = (cachedAuction || this.getCachedAuction(auctionId)).timeoutBids || [];
+    // Prepare bidders sub-messages
+    const unfilteredBidderMessages = new Map(adUnits.map((adUnit) => [
+      adUnit.code,
+      new Map((adUnit.bids || []).map((bid) => [
+        bid.bidder,
+        {
+          bidder: bid.bidder,
+          params: (bid.params && Object.keys(bid.params).length > 0) ? bid.params : {},
+          hasBid: false,
+          isTimeout: false,
+        }
+      ]))
+    ]))
 
+    // Keep only bidders that received a bid request and enrich the message
+    const bidderMessages = new Map(adUnits.map((adUnit) => [adUnit.code, new Map()]))
+    // We enrich no bids, then bids, then timeouts, because in case of a timeout, one response from a bidder
+    // Can be in all the arrays, and we want that case reflected in the call
+    noBids.forEach((rqst) => {
+      bidderMessages.get(rqst.adUnitCode).set(rqst.bidder, unfilteredBidderMessages.get(rqst.adUnitCode).get(rqst.bidder))
+    })
+    bidsReceived.forEach((bid) => {
+      bidderMessages.get(bid.adUnitCode).set(bid.bidder,
+        Object.assign(
+          bidderMessages.get(bid.adUnitCode).get(bid.bidder) || unfilteredBidderMessages.get(bid.adUnitCode).get(bid.bidder),
+          {
+            hasBid: true,
+            cpm: bid.cpm,
+            currency: bid.currency
+          }
+        )
+      )
+    })
+    cachedAuction.timeoutBids.forEach((noBid) => {
+      bidderMessages.get(noBid.adUnitCode).set(noBid.bidder,
+        Object.assign(
+          bidderMessages.get(noBid.adUnitCode).get(noBid.bidder) || unfilteredBidderMessages.get(noBid.adUnitCode).get(noBid.bidder),
+          {
+            isTimeout: true,
+          }
+        )
+      )
+    })
+
+    // Build complete message
     const message = this.createCommonMessage(auctionId);
     message.auctionElapsed = (auctionEnd - timestamp);
-
-    const biddersSubMessages = new Map()
 
     adUnits.forEach((adUnit) => {
       const adUnitCode = adUnit.code?.toLowerCase() || 'unknown_adunit_code';
@@ -175,45 +216,9 @@ export const greenbidsAnalyticsAdapter = Object.assign(adapter({ ANALYTICS_SERVE
           ...(adUnit.mediaTypes?.native !== undefined) && { native: adUnit.mediaTypes.native }
         },
         ortb2Imp: adUnit.ortb2Imp || {},
-
-        bidders: (adUnit.bids || []).map((bid) => {
-          const subMessage = {
-            bidder: bid.bidder,
-            params: (bid.params && Object.keys(bid.params).length > 0) ? bid.params : {},
-          }
-          biddersSubMessages.set((adUnitCode, bid.bidder), subMessage)
-          return subMessage
-        })
-      });
-    });
-
-    // We enrich noBid then bids, then timeouts, because in case of a timeout, one response from a bidder
-    // Can be in the 3 arrays, and we want that case reflected in the call
-    logInfo(noBids)
-    noBids.forEach(rqst => {
-      Object.assign(
-        biddersSubMessages.get((rqst.adUnitCode, rqst.bidder)) || {},
-        { hasBid: false }
-      )
+        bidders: Array.from(bidderMessages.get(adUnitCode).values())
+      })
     })
-    logInfo(bidsReceived)
-    bidsReceived.forEach(bid => {
-      Object.assign(
-        biddersSubMessages.get((bid.adUnitCode, bid.bidder)) || {},
-        {
-          hasBid: true,
-          cpm: bid.cpm,
-          currency: bid.currency
-        }
-      )
-    })
-    logInfo(timeoutBids)
-    timeoutBids.forEach(badBid => {
-      Object.assign(
-        biddersSubMessages.get((badBid.adUnitCode, badBid.bidder)) || {},
-        { isTimeout: true }
-      )
-    });
 
     return message;
   },

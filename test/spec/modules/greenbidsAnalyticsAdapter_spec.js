@@ -174,7 +174,8 @@ describe('Greenbids Prebid AnalyticsAdapter Testing', function () {
                   },
                 },
                 bids: [
-                  { bidder: "greenbidsx", params: { 'placement ID': 12784 } }
+                  { bidder: "greenbids" },
+                  { bidder: "greenbidsx", params: { 'placement ID': 12784 } },
                 ]
               },
               {
@@ -197,7 +198,10 @@ describe('Greenbids Prebid AnalyticsAdapter Testing', function () {
                       adunitDFP: 'adunitcustomPathExtension'
                     }
                   }
-                }
+                },
+                bids: [
+                  { bidder: "greenbids" }
+                ]
               },
             ],
             bidsReceived: receivedBids,
@@ -269,6 +273,63 @@ describe('Greenbids Prebid AnalyticsAdapter Testing', function () {
                 ]
               }
             ],
+          });
+        });
+        it("should not add filtered bidders", function () {
+          const auctionEndArgs = {
+            auctionId: auctionId,
+            timestamp: 0,
+            auctionEnd: 100,
+            adUnitCodes: ['adunit-1'],
+            adUnits: [
+              {
+                code: 'adunit-1',
+                mediaTypes: {
+                  banner: {
+                    sizes: [[300, 250], [300, 600]]
+                  },
+                },
+                bids: [
+                  { bidder: "bidder", params: { 'placement ID': 12784 } },
+                  { bidder: "filtered" },
+                ]
+              },
+            ],
+            bidsReceived: [
+              {
+                adUnitCode: 'adunit-1',
+                bidder: 'bidder',
+                cpm: 1,
+                currency: 'USD',
+              },
+            ],
+            noBids: []
+          };
+
+          const actual = greenbidsAnalyticsAdapter.createBidMessage(auctionEndArgs, { timeoutBids: [] });
+          assertHavingRequiredMessageFields(actual);
+          expect(actual).to.deep.include({
+            adUnits: [
+              {
+                code: 'adunit-1',
+                mediaTypes: {
+                  banner: {
+                    sizes: [[300, 250], [300, 600]]
+                  }
+                },
+                ortb2Imp: {},
+                bidders: [
+                  {
+                    bidder: 'bidder',
+                    params: { 'placement ID': 12784 },
+                    cpm: 1,
+                    currency: 'USD',
+                    isTimeout: false,
+                    hasBid: true
+                  }
+                ]
+              }
+            ]
           });
         });
       });
